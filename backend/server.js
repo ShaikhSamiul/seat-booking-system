@@ -14,7 +14,9 @@ const { Server } = require('socket.io');
 const app = express();
 
 // Enable Cross-Origin Resource Sharing so the React frontend can talk to this API
-app.use(cors());
+app.use(cors({
+    origin: "https://seat-booking-system-nu.vercel.app"
+}));
 // Parse incoming JSON payloads from HTTP requests
 app.use(express.json());
 
@@ -26,7 +28,7 @@ const io = new Server(server, {
     cors: {
         // NOTE: Currently set to "*" for local mobile testing. 
         // During deployment, this should be restricted to your specific Vercel URL.
-        origin: "*", 
+        origin: "https://seat-booking-system-nu.vercel.app", 
         methods: ["GET", "POST"]
     }
 });
