@@ -37,3 +37,13 @@ const seedSeats = async() => {
 }
 
 seedSeats();
+
+//To refresh all the seats
+// { status: 'BOOKED' },
+//   { 
+//     $set: { 
+//       status: 'AVAILABLE', 
+//       bookedBy: null, 
+//       bookedAt: null 
+//     } 
+//   }

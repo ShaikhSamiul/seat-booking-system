@@ -47,12 +47,13 @@ const SeatDashboard = () => {
    * Triggers a custom Framer Motion toast notification that auto-dismisses.
    * @param {string} message - The text to display.
    * @param {string} type - 'success', 'warning', or 'error' (determines color).
+   * @param {number} duration - Milliseconds before auto-dismiss (defaults to 3500).
    */
-  const showToast = (message, type = 'error') => {
+  const showToast = (message, type = 'error', duration = 3500) => {
     setToast({ message, type });
     setTimeout(() => {
       setToast(null);
-    }, 3500);
+    }, duration);
   };
 
   /**
@@ -81,13 +82,81 @@ const SeatDashboard = () => {
   };
 
   // ==========================================
-  // 3. EFFECTS & SUBSCRIPTIONS
+  // 3. WARM-UP & DATA FETCHING LOGIC
+  // ==========================================
+
+  /**
+   * Fetches the entire grid from MongoDB/Redis and sorts it alphanumerically (A1 -> J5).
+   */
+  const fetchSeats = async () => {
+    try {
+      const response = await fetch(`${API_URL}/api/seats`);
+      if (!response.ok) throw new Error('Failed to fetch seats');
+      const data = await response.json();
+      
+      // Custom alphanumeric sort to prevent A10 from appearing before A2
+      const sortedSeats = data.sort((a, b) => {
+        const rowA = a.seatId.charAt(0);
+        const colA = parseInt(a.seatId.slice(1));
+        const rowB = b.seatId.charAt(0);
+        const colB = parseInt(b.seatId.slice(1));
+
+        if (rowA === rowB) {
+          return colA - colB; 
+        }
+        return rowA.localeCompare(rowB); 
+      });
+
+      setSeats(sortedSeats);
+      setLoading(false);
+    } catch (err) {
+      setError(err.message);
+      setLoading(false);
+    }
+  };
+
+  /**
+   * Warm-Up Ping Architecture
+   * Sends a ping to the /health route. If Render is asleep, it will timeout after 3s
+   * and trigger a 5-second polling loop until the server responds, then loads the grid.
+   */
+  const wakeUpServer = async () => {
+    let isAwake = false;
+    let attempt = 0;
+
+    while (!isAwake) {
+      try {
+        // Create a 3-second abort controller so fetch doesn't hang indefinitely on a sleeping server
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 3000);
+
+        const response = await fetch(`${API_URL}/health`, { signal: controller.signal });
+        clearTimeout(timeoutId);
+
+        if (response.ok) {
+          isAwake = true;
+          fetchSeats(); // Server is officially awake! Load the grid.
+          break;
+        }
+      // eslint-disable-next-line no-unused-vars
+      } catch (error) {
+        if (attempt === 0) {
+          // Display the 10-second warning toast ONLY on the first failed ping
+          showToast("Wait for a minute as the Render backend is starting. It may take upto a minute", "warning", 10000);
+        }
+      }
+      attempt++;
+      // Pause the loop for 5 seconds before knocking on the server's door again
+      await new Promise(resolve => setTimeout(resolve, 5000));
+    }
+  };
+
+  // ==========================================
+  // 4. EFFECTS & SUBSCRIPTIONS
   // ==========================================
 
   /**
    * WebSocket Initialization & Subscription
-   * Establishes a persistent connection to the Express server once a user is authenticated.
-   * Listens for 'seatUpdated' broadcasts to mutate local state without HTTP polling.
    */
   useEffect(() => {
     if (!currentUser) return;
@@ -115,16 +184,7 @@ const SeatDashboard = () => {
   }, [currentUser, API_URL]);
 
   /**
-   * Initial Data Fetch
-   * Retrieves the master grid of all 50 seats on component mount.
-   */
-  useEffect(() => {
-    fetchSeats();
-  }, []);
-
-  /**
    * Distributed Locking Timer
-   * Manages the local 5-minute countdown clock when a user holds a seat.
    */
   useEffect(() => {
     let timer;
@@ -139,7 +199,6 @@ const SeatDashboard = () => {
 
   /**
    * Time Expiration Handler
-   * Automatically triggers a release command if the countdown reaches zero.
    */
   useEffect(() => {
     if (timeLeft === 0 && selectedSeat) {
@@ -149,8 +208,8 @@ const SeatDashboard = () => {
   }, [timeLeft, selectedSeat]);
 
   /**
-   * Session Initialization
-   * Checks browser LocalStorage to determine if a returning user needs to bypass the Auth Modal.
+   * Session Initialization & Cold Start Execution
+   * Checks LocalStorage, sets the user, and begins the Warm-Up ping sequence.
    */
   useEffect(() => {
     const savedUserId = localStorage.getItem('seat_booking_user_id');
@@ -158,16 +217,16 @@ const SeatDashboard = () => {
 
     if (savedUserId && savedUserName) {
       setCurrentUser({ id: savedUserId, name: savedUserName });
-      fetchSeats();
+      wakeUpServer(); 
     } else {
       setShowWelcomeModal(true);
-      fetchSeats(); 
+      wakeUpServer(); 
     }
   }, []);
 
 
   // ==========================================
-  // 4. API INTERACTIONS (HTTP)
+  // 5. API INTERACTIONS (HTTP)
   // ==========================================
 
   /**
@@ -230,36 +289,6 @@ const SeatDashboard = () => {
     setIsLoginMode(true); 
     setIsDrawerOpen(false); 
     setShowWelcomeModal(true);
-  };
-
-  /**
-   * Fetches the entire grid from MongoDB/Redis and sorts it alphanumerically (A1 -> J5).
-   */
-  const fetchSeats = async () => {
-    try {
-      const response = await fetch(`${API_URL}/api/seats`);
-      if (!response.ok) throw new Error('Failed to fetch seats');
-      const data = await response.json();
-      
-      // Custom alphanumeric sort to prevent A10 from appearing before A2
-      const sortedSeats = data.sort((a, b) => {
-        const rowA = a.seatId.charAt(0);
-        const colA = parseInt(a.seatId.slice(1));
-        const rowB = b.seatId.charAt(0);
-        const colB = parseInt(b.seatId.slice(1));
-
-        if (rowA === rowB) {
-          return colA - colB; 
-        }
-        return rowA.localeCompare(rowB); 
-      });
-
-      setSeats(sortedSeats);
-      setLoading(false);
-    } catch (err) {
-      setError(err.message);
-      setLoading(false);
-    }
   };
 
   /**
@@ -397,7 +426,7 @@ const SeatDashboard = () => {
 
 
   // ==========================================
-  // 5. RENDER PHASE
+  // 6. RENDER PHASE
   // ==========================================
 
   // Render initial Loading Screen
