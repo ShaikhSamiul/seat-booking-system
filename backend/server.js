@@ -121,7 +121,7 @@ const startServer = async () => {
  */
 
 // Simple health check endpoint for deployment monitoring
-app.get('/health', (req, res) => {
+app.get('/wakeup', (req, res) => {
     res.status(200).json({ status: 'API is running', databases: 'Connected' });
 });
 
