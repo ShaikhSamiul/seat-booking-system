@@ -1,53 +1,67 @@
 const express = require('express');
+const bcrypt = require('bcryptjs');
 const User = require('../models/User'); 
 
 /**
  * User Routes Module
- * This file handles user authentication and session management.
- * To reduce friction and get users into the VIP Arena faster, this 
- * implements a simplified, passwordless email/username authentication flow.
+ * Handles user authentication with bcrypt password hashing and session management.
  */
 const router = express.Router();
 
 /**
  * @route   POST /api/users/
- * @desc    Registers a new user into the database.
- * @logic   Requires both a unique email and a unique username.
+ * @desc    Registers a new user into the database with hashed password.
+ * @logic   Requires unique email, unique username, and a password (min 6 characters).
  */
 router.post('/', async (req, res) => {
     try {
-        const { username, email } = req.body;
+        const { username, email, password } = req.body;
         
         // Basic validation
-        if (!username || !email) {
-            return res.status(400).json({ error: 'Username and email are required' });
+        if (!username || !email || !password) {
+            return res.status(400).json({ error: 'Username, email, and password are required' });
         }
 
-        // 1. Uniqueness Check (Email)
-        // Prevent users from accidentally creating multiple accounts with the same email
-        let user = await User.findOne({ email });
+        if (password.length < 6) {
+            return res.status(400).json({ error: 'Password must be at least 6 characters long' });
+        }
 
+        const normalizedEmail = email.toLowerCase().trim();
+        const normalizedUsername = username.trim();
+
+        // 1. Uniqueness Check (Email)
+        let user = await User.findOne({ email: normalizedEmail });
         if (user) {
-            // Reject the registration and redirect them to the Login flow
             return res.status(409).json({ error: 'Email already exists. Please log in instead.' });
         }
 
-        // 2. Create the new user document
+        // 2. Hash the password with bcrypt
+        const salt = await bcrypt.genSalt(10);
+        const hashedPassword = await bcrypt.hash(password, salt);
+
+        // 3. Create the new user document
         user = new User({ 
-            username: username,
-            email: email
+            username: normalizedUsername,
+            email: normalizedEmail,
+            password: hashedPassword
         });
         
-        // 3. Save to MongoDB
+        // 4. Save to MongoDB
         await user.save();
-        res.status(201).json(user);
+
+        // 5. Return sanitized user payload (exclude password)
+        res.status(201).json({
+            _id: user._id,
+            username: user.username,
+            email: user.email,
+            createdAt: user.createdAt,
+            updatedAt: user.updatedAt
+        });
         
     } catch (error) {
-        console.error('Error handling user:', error);
+        console.error('Error handling user registration:', error);
         
-        // 4. Uniqueness Check (Username)
-        // If the email is new, but the username is already taken, MongoDB will 
-        // throw a duplicate key error (code 11000) based on our schema definitions.
+        // Uniqueness Check (Username)
         if (error.code === 11000) {
             return res.status(409).json({ error: 'That username is already taken. Please choose another.' });
         }
@@ -58,30 +72,47 @@ router.post('/', async (req, res) => {
 
 /**
  * @route   POST /api/users/login
- * @desc    Authenticates a returning user using an email-only flow.
- * @logic   Simply verifies the email exists in the database and returns the user payload.
+ * @desc    Authenticates a user via email and password.
+ * @logic   Verifies the email exists and compares password hash via bcrypt.
  */
 router.post('/login', async (req, res) => {
     try {
-        const { email } = req.body;
+        const { email, password } = req.body;
         
-        if (!email) {
-            return res.status(400).json({ error: 'Email is required' });
+        if (!email || !password) {
+            return res.status(400).json({ error: 'Email and password are required' });
         }
 
-        // 1. Look up the user by their email index
-        const user = await User.findOne({ email });
+        const normalizedEmail = email.toLowerCase().trim();
 
-        // 2. If no matching document is found, reject the login attempt
+        // 1. Look up user by email
+        const user = await User.findOne({ email: normalizedEmail });
         if (!user) {
-            return res.status(404).json({ error: 'User not found. Please sign up first.' });
+            return res.status(401).json({ error: 'No account registered with this email address' });
         }
 
-        // 3. Success! Return the user data to populate the React frontend state
-        res.status(200).json(user);
+        // 2. Check if account has a password set (guards against legacy seeded data)
+        if (!user.password) {
+            return res.status(400).json({ error: 'Account has no password set. Please create a new account.' });
+        }
+
+        // 3. Compare password hash
+        const isMatch = await bcrypt.compare(password, user.password);
+        if (!isMatch) {
+            return res.status(401).json({ error: 'Incorrect password. Please check your credentials and try again.' });
+        }
+
+        // 4. Return sanitized user data (exclude password)
+        res.status(200).json({
+            _id: user._id,
+            username: user.username,
+            email: user.email,
+            createdAt: user.createdAt,
+            updatedAt: user.updatedAt
+        });
         
     } catch (error) {
-        console.error('Error logging in:', error);
+        console.error('Error during login:', error);
         res.status(500).json({ error: 'Server error during login' });
     }
 });

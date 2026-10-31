@@ -31,6 +31,18 @@ This application utilizes a "Two-Database" hybrid architecture to optimize for b
 
 ---
 
+## 📚 Developer & Architecture Documentation
+
+Comprehensive architecture, API contracts, schemas, and troubleshooting references are located in the [`docs/`](./docs/INDEX.md) directory:
+
+* **[Architecture & Concurrency Control](./docs/ARCHITECTURE_AND_CONCURRENCY.md)**: Deep dive into distributed locking (`SET NX EX`), race condition prevention, and WebSocket disconnect recovery.
+* **[API Reference](./docs/API_DOCUMENTATION.md)**: Complete REST endpoint specifications, error codes, and WebSocket events.
+* **[Database & State Machine](./docs/DATABASE_SCHEMA.md)**: MongoDB schemas, Redis key namespaces, TTLs, and seat lifecycle transitions.
+* **[Frontend Guide](./docs/FRONTEND_GUIDE.md)**: React 19 architecture, Tailwind CSS v4 design system, cold-start handling, and state flow.
+* **[Development & Troubleshooting](./docs/DEV_WORKFLOW_AND_TROUBLESHOOTING.md)**: Local configuration, known gotchas (CORS, multi-tab edge cases), and modification checklists.
+
+---
+
 ## 📱 Responsiveness
 
 The application is fully optimized for all screen sizes. On mobile devices, the 10-column seating grid converts into a horizontally scrollable container to maintain touch-target size and prevent UI scaling issues.

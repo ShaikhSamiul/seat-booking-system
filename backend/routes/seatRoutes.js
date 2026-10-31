@@ -56,6 +56,15 @@ module.exports = (redisClient, io) => {
         const { seatId, userId } = req.body;
 
         try{
+            // 0. Single-Seat Policy Enforcement:
+            // Ensure this user does not already hold another active seat.
+            const existingHeldSeat = await redisClient.get(`active_user_hold:${userId}`);
+            if (existingHeldSeat && existingHeldSeat !== seatId) {
+                return res.status(409).json({
+                    error: `You are already holding seat ${existingHeldSeat}. Please purchase or release it before choosing another.`
+                });
+            }
+
             // 1. Verify the seat exists and isn't permanently booked in Mongo
             const seat = await Seat.findOne({ seatId });
             if(!seat) return res.status(404).json({error: 'Seat not found'});
